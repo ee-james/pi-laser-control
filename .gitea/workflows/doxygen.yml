@@ -1,0 +1,57 @@
+name: Doxygen docs
+
+# Runs on every push to any branch except docs itself (the workflow's own
+# output branch) -- otherwise the publish step's push would retrigger it.
+#
+# runs-on: ubuntu-latest maps to a host-mode runner (giteadirect-runner) --
+# no Docker on that VM, so jobs execute directly as the gitea-runner system
+# user. doxygen/git/nodejs are pre-installed on the host rather than in this
+# workflow, since host mode persists the environment across runs.
+on:
+  push:
+    branches-ignore:
+      - docs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  doxygen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate docs
+        run: doxygen Doxyfile
+
+      - name: Publish to docs branch
+        run: |
+          set -eu
+
+          git config user.name "gitea-actions"
+          git config user.email "actions@noreply.zwcnet.com"
+
+          BUILD_DIR="$(mktemp -d)"
+          mv doc-build/html/* "$BUILD_DIR"/
+
+          if git ls-remote --exit-code --heads origin docs >/dev/null 2>&1; then
+            git fetch origin docs
+            git checkout -B docs origin/docs
+          else
+            git checkout --orphan docs
+          fi
+
+          git rm -rf --ignore-unmatch . >/dev/null
+          cp -r "$BUILD_DIR"/. .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No documentation changes, skipping commit."
+          else
+            git commit -m "Update Doxygen docs for ${GITHUB_SHA}"
+            git push origin docs --force
+          fi
