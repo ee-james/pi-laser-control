@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+## @file Implementation for pi laser ctrl.
+##
 """
 Photonics Industries DX-355-5-WC Laser Controller - CLI
 Protocol: HEXASC, 115200 8N1, CR-terminated, 2-byte checksum
@@ -32,10 +34,14 @@ SYS_STATES = {0:'Initializing', 1:'Ramping', 2:'Running',
 
 # ---- Protocol ----
 
+## @brief Documents build_frame.
+##
 def build_frame(rw, nn, aa, cc, data):
     b = [rw, nn, aa, cc] + data
     return "".join(f"{x:02X}" for x in b) + f"{sum(b)&0xFFFF:04X}"
 
+## @brief Documents send_cmd.
+##
 def send_cmd(ser, hexstr, timeout=1.0):
     ser.reset_input_buffer()
     ser.write((hexstr + "\r").encode("ascii"))
@@ -49,6 +55,8 @@ def send_cmd(ser, hexstr, timeout=1.0):
             buf += b
     return buf.decode("ascii", errors="replace").strip()
 
+## @brief Documents parse_response.
+##
 def parse_response(resp):
     if len(resp) < 10 or len(resp) % 2 != 0:
         return False, 0, 0, []
@@ -62,11 +70,15 @@ def parse_response(resp):
     ok = ((raw[-2]<<8)|raw[-1]) == (sum(raw[:-2])&0xFFFF) and rw in (0x02,0x03)
     return ok, rw, cc, data
 
+## @brief Documents _write.
+##
 def _write(ser, cc, data):
     r = send_cmd(ser, build_frame(0x00, len(data), 0x00, cc, data))
     ok, _, _, d = parse_response(r)
     return ok, d, r
 
+## @brief Documents _read.
+##
 def _read(ser, cc, aa=0x00):
     r = send_cmd(ser, build_frame(0x01, 0x00, aa, cc, []))
     ok, _, _, d = parse_response(r)
@@ -74,6 +86,8 @@ def _read(ser, cc, aa=0x00):
 
 # ---- Read functions ----
 
+## @brief Documents read_status.
+##
 def read_status(ser):
     ok, data, _ = _read(ser, 0x0F)
     if not ok or len(data) < 5: return None
@@ -90,11 +104,15 @@ def read_status(ser):
         'alarm_pwrmon':   bool(d3&0x80),
     }
 
+## @brief Documents read_2b.
+##
 def read_2b(ser, cc, scale=100.0):
     ok, data, _ = _read(ser, cc)
     if not ok or len(data) < 2: return None
     return ((data[0]<<8)|data[1]) / scale
 
+## @brief Documents read_power_monitor.
+##
 def read_power_monitor(ser):
     """0x15 Power Monitor - laser returns 4 bytes, units 0.01W.
     Appears to be LDD electrical input power, not optical output."""
@@ -106,6 +124,8 @@ def read_power_monitor(ser):
         val = (data[0]<<8)|data[1]
     return val / 100.0
 
+## @brief Documents read_prf_ext.
+##
 def read_prf_ext(ser):
     """0x28 PRF Actual EXT - LMCV4 clock as measured at laser input.
     This is the LightBurn-requested fire rate arriving at the DX."""
@@ -115,6 +135,8 @@ def read_prf_ext(ser):
         return (data[0]<<16)|(data[1]<<8)|data[2]
     return (data[0]<<8)|data[1]
 
+## @brief Documents read_pulse_energy.
+##
 def read_pulse_energy(ser):
     """0x8C Pulse Energy - 0.01 µJ/count. Valid only when LDD on and firing."""
     ok, data, _ = _read(ser, 0x8C)
@@ -122,20 +144,28 @@ def read_pulse_energy(ser):
     val = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|data[3]
     return val / 100.0  # µJ
 
+## @brief Documents read_1b.
+##
 def read_1b(ser, cc):
     ok, data, _ = _read(ser, cc)
     return data[0] if ok and data else None
 
+## @brief Documents read_3b.
+##
 def read_3b(ser, cc):
     ok, data, _ = _read(ser, cc)
     if not ok or len(data) < 3: return None
     return (data[0]<<16)|(data[1]<<8)|data[2]
 
+## @brief Documents read_temp.
+##
 def read_temp(ser, aa):
     ok, data, _ = _read(ser, 0x32, aa)
     if not ok or len(data) < 2: return None
     return ((data[0]<<8)|data[1]) / 100.0
 
+## @brief Documents read_soft_faults.
+##
 def read_soft_faults(ser):
     ok, data, _ = _read(ser, 0x0C)
     if not ok or len(data) < 2: return None
@@ -143,6 +173,8 @@ def read_soft_faults(ser):
     return {'ldd_interlock': bool(d&0x02), 'shutter_interlock': bool(d&0x04),
             'low_ext_freq':  bool(d&0x08), 'high_ext_freq':     bool(d&0x10), 'raw': d}
 
+## @brief Documents read_board_faults.
+##
 def read_board_faults(ser):
     ok, data, _ = _read(ser, 0x0D)
     if not ok or len(data) < 2: return None
@@ -151,6 +183,8 @@ def read_board_faults(ser):
             'sensor': bool(d&0x08), 'power_monitor': bool(d&0x10),
             'pulse': bool(d&0x20), 'ldd': bool(d&0x40), 'motor': bool(d&0x80), 'raw': d}
 
+## @brief Documents poll_all.
+##
 def poll_all(ser):
     return {
         'status':        read_status(ser),
@@ -178,6 +212,8 @@ def poll_all(ser):
 
 # ---- Display ----
 
+## @brief Documents fmt_poll.
+##
 def fmt_poll(d):
     st  = d['status']
     SEP = "="*56
@@ -209,6 +245,8 @@ def fmt_poll(d):
 
     L.append(sep)
 
+    ## @brief Documents fv.
+    ##
     def fv(val, fmt, unit): return f"{val:{fmt}} {unit}" if val is not None else "N/A"
     L += [
         f"  Set Current     : {fv(d['set_current'],   '.2f', 'A')}",
@@ -277,6 +315,8 @@ def fmt_poll(d):
     L += [SEP, ""]
     return "\n".join(L)
 
+## @brief Documents fmt_status.
+##
 def fmt_status(ser):
     st   = read_status(ser)
     pw   = read_power_monitor(ser)
@@ -311,6 +351,8 @@ def fmt_status(ser):
 
 # ---- Safety ----
 
+## @brief Documents check_temps.
+##
 def check_temps(ser):
     alarms = []
     for name, aa, sp_key in [('SHG',0x00,'SHG'),('THG',0x01,'THG')]:
@@ -322,6 +364,8 @@ def check_temps(ser):
 
 # ---- Shutter open helper (LDD cycle) ----
 
+## @brief Documents open_shutter.
+##
 def open_shutter(ser):
     st = read_status(ser)
     if st and st['shutter']: return True, "already open"
@@ -335,6 +379,8 @@ def open_shutter(ser):
 
 # ---- Sequences ----
 
+## @brief Documents cmd_go.
+##
 def cmd_go(ser):
     print("\n---- Go Sequence ----")
     st = read_status(ser)
@@ -367,6 +413,8 @@ def cmd_go(ser):
     print(f"  {'✓' if ok else '✗'} Current → {MAX_CURRENT}A  ({r})")
     print("\n---- Ready. LightBurn may fire. ----\n")
 
+## @brief Documents cmd_startup.
+##
 def cmd_startup(ser):
     print("\n---- Startup Sequence ----")
     print("Reading current state...")
@@ -411,6 +459,8 @@ def cmd_startup(ser):
     print(f"  {'✓' if ok else '✗'} Current → {MAX_CURRENT}A  ({r})")
     print("\n---- Laser is active. ----\n")
 
+## @brief Documents cmd_shutdown.
+##
 def cmd_shutdown(ser):
     print("\n---- Shutdown Sequence ----")
     _write(ser, 0x04, [0x00]); print("  ✓ Shutter → Closed")
@@ -429,7 +479,11 @@ def cmd_shutdown(ser):
 
 # ---- Monitor thread ----
 
+## @brief Documents Monitor.
+##
 class Monitor:
+    ## @brief Documents __init__.
+    ##
     def __init__(self, ser):
         self.ser = ser
         self._stop  = threading.Event()
@@ -440,10 +494,18 @@ class Monitor:
         self._fault_alerted = False
         threading.Thread(target=self._run, daemon=True).start()
 
+    ## @brief Documents pause.
+    ##
     def pause(self):  self._pause.set();   time.sleep(0.12)
+    ## @brief Documents resume.
+    ##
     def resume(self): self._pause.clear()
+    ## @brief Documents stop.
+    ##
     def stop(self):   self._stop.set()
 
+    ## @brief Documents _run.
+    ##
     def _run(self):
         while not self._stop.is_set():
             if self._pause.is_set():
@@ -487,6 +549,8 @@ class Monitor:
                 pass
             self._stop.wait(POLL_INTERVAL)
 
+    ## @brief Documents display.
+    ##
     def display(self):
         d = self.last
         st = d.get('st'); amps = d.get('amps'); pw = d.get('pw')
@@ -524,6 +588,8 @@ Commands:
   q / quit     Exit (laser state preserved - shutdown first if needed)
 """
 
+## @brief Documents main.
+##
 def main():
     port = sys.argv[1] if len(sys.argv) > 1 else "/dev/cu.usbserial-3130"
     print(f"\nPhotonics Industries DX-355-5-WC  |  {port} @ {BAUD} 8N1\n")
