@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+## @file Implementation for pi laser gui.
+##
 """
 Photonics Industries DX-355-5-WC Laser Control GUI
 Replaces PI Control Software v5
@@ -60,11 +62,15 @@ C = {
 
 # ---- Protocol ----
 
+## @brief Documents build_frame.
+##
 def build_frame(rw, nn, aa, cc, data):
     frame_bytes = [rw, nn, aa, cc] + data
     cs = sum(frame_bytes) & 0xFFFF
     return "".join(f"{b:02X}" for b in frame_bytes) + f"{cs:04X}"
 
+## @brief Documents send_cmd.
+##
 def send_cmd(ser, hexstr, timeout=1.0):
     wire = (hexstr + "\r").encode("ascii")
     ser.reset_input_buffer()
@@ -80,6 +86,8 @@ def send_cmd(ser, hexstr, timeout=1.0):
             buf += b
     return buf.decode("ascii", errors="replace").strip()
 
+## @brief Documents parse_response.
+##
 def parse_response(resp):
     if len(resp) < 10 or len(resp) % 2 != 0:
         return False, 0, 0, []
@@ -96,18 +104,24 @@ def parse_response(resp):
     ok = (cs_recv == cs_calc) and rw in (0x02, 0x03)
     return ok, rw, cc, data
 
+## @brief Documents _write.
+##
 def _write(ser, cc, data):
     f = build_frame(0x00, len(data), 0x00, cc, data)
     r = send_cmd(ser, f)
     ok, _, _, d = parse_response(r)
     return ok, d, r
 
+## @brief Documents _read.
+##
 def _read(ser, cc, aa=0x00):
     f = build_frame(0x01, 0x00, aa, cc, [])
     r = send_cmd(ser, f)
     ok, _, _, d = parse_response(r)
     return ok, d, r
 
+## @brief Documents read_status.
+##
 def read_status(ser):
     ok, data, _ = _read(ser, 0x0F)
     if not ok or len(data) < 5:
@@ -137,6 +151,8 @@ def read_status(ser):
         'alarm_pwrmon':  bool(d3 & 0x80),
     }
 
+## @brief Documents read_2byte.
+##
 def read_2byte(ser, cc, scale=100.0):
     """Generic 2-byte scaled read. Returns float or None."""
     ok, data, _ = _read(ser, cc)
@@ -144,24 +160,36 @@ def read_2byte(ser, cc, scale=100.0):
         return None
     return ((data[0] << 8) | data[1]) / scale
 
+## @brief Documents read_actual_current.
+##
 def read_actual_current(ser):
     return read_2byte(ser, 0x12, 100.0)
 
+## @brief Documents read_set_current.
+##
 def read_set_current(ser):
     return read_2byte(ser, 0x11, 100.0)
 
+## @brief Documents read_max_current.
+##
 def read_max_current(ser):
     return read_2byte(ser, 0x14, 100.0)
 
+## @brief Documents read_diode_voltage.
+##
 def read_diode_voltage(ser):
     return read_2byte(ser, 0x13, 100.0)
 
+## @brief Documents read_temp.
+##
 def read_temp(ser, aa):
     ok, data, _ = _read(ser, 0x32, aa)
     if not ok or len(data) < 2:
         return None
     return ((data[0] << 8) | data[1]) / 100.0
 
+## @brief Documents read_prf.
+##
 def read_prf(ser):
     """Returns PRF in Hz (measured or set depending on source mode)."""
     ok, data, _ = _read(ser, 0x21)
@@ -169,6 +197,8 @@ def read_prf(ser):
         return None
     return (data[0] << 16) | (data[1] << 8) | data[2]
 
+## @brief Documents read_prf_source.
+##
 def read_prf_source(ser):
     """Returns 0=INT, 1=EXT or None."""
     ok, data, _ = _read(ser, 0x23)
@@ -176,6 +206,8 @@ def read_prf_source(ser):
         return None
     return data[0]
 
+## @brief Documents read_gate_source.
+##
 def read_gate_source(ser):
     """Returns 0=INT, 1=EXT or None."""
     ok, data, _ = _read(ser, 0x24)
@@ -183,6 +215,8 @@ def read_gate_source(ser):
         return None
     return data[0]
 
+## @brief Documents read_duty_mode.
+##
 def read_duty_mode(ser):
     """Returns 0=Fixed, 1=Track or None."""
     ok, data, _ = _read(ser, 0x69)
@@ -190,12 +224,16 @@ def read_duty_mode(ser):
         return None
     return data[0]
 
+## @brief Documents read_duty_width.
+##
 def read_duty_width(ser):
     ok, data, _ = _read(ser, 0x54)
     if not ok or len(data) < 3:
         return None
     return (data[0] << 16) | (data[1] << 8) | data[2]
 
+## @brief Documents read_flow.
+##
 def read_flow(ser):
     """Returns flow rate in L/min or None."""
     ok, data, _ = _read(ser, 0x74)
@@ -203,6 +241,8 @@ def read_flow(ser):
         return None
     return ((data[0] << 8) | data[1]) / 10.0
 
+## @brief Documents read_power_meter.
+##
 def read_power_meter(ser):
     """0x15 Power Monitor - laser returns 4 bytes, units 0.01W.
     Likely LDD electrical input power, not optical output."""
@@ -215,6 +255,8 @@ def read_power_meter(ser):
         val = (data[0]<<8)|data[1]
     return val / 100.0
 
+## @brief Documents read_prf_ext.
+##
 def read_prf_ext(ser):
     """0x28 PRF Actual EXT - LMCV4 clock as measured at laser input.
     Represents the LightBurn-requested fire rate entering the DX."""
@@ -225,6 +267,8 @@ def read_prf_ext(ser):
         return (data[0]<<16)|(data[1]<<8)|data[2]
     return (data[0]<<8)|data[1]
 
+## @brief Documents read_prf_actual.
+##
 def read_prf_actual(ser):
     """0x22 PRF Actual - gate-qualified confirmed pulse count.
     Delta vs prf_ext reveals missed/rejected Q-switch events."""
@@ -235,6 +279,8 @@ def read_prf_actual(ser):
         return (data[0]<<16)|(data[1]<<8)|data[2]
     return (data[0]<<8)|data[1]
 
+## @brief Documents read_pulse_energy.
+##
 def read_pulse_energy(ser):
     """0x8C Pulse Energy - 0.01 µJ/count. Valid only when LDD on and firing."""
     ok, data, _ = _read(ser, 0x8C)
@@ -243,6 +289,8 @@ def read_pulse_energy(ser):
     val = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|data[3]
     return val / 100.0  # µJ
 
+## @brief Documents read_soft_faults.
+##
 def read_soft_faults(ser):
     """Returns dict of soft fault bits or None."""
     ok, data, _ = _read(ser, 0x0C)
@@ -257,6 +305,8 @@ def read_soft_faults(ser):
         'raw':              d2,
     }
 
+## @brief Documents read_board_faults.
+##
 def read_board_faults(ser):
     """Returns dict of board fault bits or None."""
     ok, data, _ = _read(ser, 0x0D)
@@ -275,11 +325,15 @@ def read_board_faults(ser):
         'raw':           d2,
     }
 
+## @brief Documents _read_single_byte.
+##
 def _read_single_byte(ser, cc):
     """Read a single-byte value, return int or None."""
     ok, data, _ = _read(ser, cc)
     return data[0] if ok and data else None
 
+## @brief Documents poll_all.
+##
 def poll_all(ser):
     # read everything and stuff it in a dict. never raises - a failed read
     # just lands as None for that key.
@@ -308,6 +362,8 @@ def poll_all(ser):
     d['board_faults']  = read_board_faults(ser)
     return d
 
+## @brief Documents print_poll_all.
+##
 def print_poll_all(ser):
     # full diagnostic dump, formatted for a terminal
     d = poll_all(ser)
@@ -419,8 +475,12 @@ def print_poll_all(ser):
 
 SIM_MODE = False
 
+## @brief Documents SimState.
+##
 class SimState:
     """Mutable laser state for simulation."""
+    ## @brief Documents __init__.
+    ##
     def __init__(self):
         self.shutter       = False
         self.ldd           = False
@@ -442,12 +502,16 @@ class SimState:
 
 _sim = SimState()
 
+## @brief Documents _sim_drift.
+##
 def _sim_drift(val, target, rate=0.05):
     """Drift val toward target with small noise."""
     val += (target - val) * rate
     val += random.uniform(-0.02, 0.02)
     return round(val, 2)
 
+## @brief Documents sim_read_status.
+##
 def sim_read_status():
     _sim.shg = _sim_drift(_sim.shg, TEMP_SETPOINTS['SHG'])
     _sim.thg = _sim_drift(_sim.thg, TEMP_SETPOINTS['THG'])
@@ -472,6 +536,8 @@ def sim_read_status():
         'state_str':     SYS_STATES.get(_sim.state, 'Unknown'),
     }
 
+## @brief Documents sim_write.
+##
 def sim_write(cc, data):
     if cc == 0x04:   # shutter
         if data[0] == 0x01:
@@ -500,7 +566,11 @@ def sim_write(cc, data):
 
 # ---- GUI ----
 
+## @brief Documents LaserGUI.
+##
 class LaserGUI:
+    ## @brief Documents __init__.
+    ##
     def __init__(self, root):
         self.root   = root
         self.ser    = None
@@ -520,6 +590,8 @@ class LaserGUI:
         self._build_ui()
         self._scan_ports()
 
+    ## @brief Documents _build_fonts.
+    ##
     def _build_fonts(self):
         self.f_title   = tkfont.Font(family="Helvetica Neue", size=13, weight="bold")
         self.f_label   = tkfont.Font(family="Helvetica Neue", size=10, weight="bold")
@@ -529,6 +601,8 @@ class LaserGUI:
         self.f_status  = tkfont.Font(family="Helvetica Neue", size=9,  weight="bold")
         self.f_small   = tkfont.Font(family="Courier New",    size=9)
 
+    ## @brief Documents _panel.
+    ##
     def _panel(self, parent, title, col, row, colspan=1, rowspan=1, padx=4, pady=4):
         outer = tk.Frame(parent, bg=C['border'], padx=1, pady=1)
         outer.grid(column=col, row=row, columnspan=colspan, rowspan=rowspan,
@@ -544,6 +618,8 @@ class LaserGUI:
         content.pack(fill='both', expand=True)
         return content
 
+    ## @brief Documents _led.
+    ##
     def _led(self, parent, label, row):
         fr = tk.Frame(parent, bg=C['panel'])
         fr.grid(row=row, column=0, sticky='w', pady=1)
@@ -555,10 +631,14 @@ class LaserGUI:
         lbl.pack(side='left')
         return canvas
 
+    ## @brief Documents _draw_led.
+    ##
     def _draw_led(self, canvas, color):
         canvas.delete('all')
         canvas.create_oval(2, 2, 10, 10, fill=color, outline=color)
 
+    ## @brief Documents _make_button.
+    ##
     def _make_button(self, parent, text, color, command, width=None):
         """
         macOS-safe button using Label + bindings.
@@ -576,10 +656,16 @@ class LaserGUI:
         btn._base_color = color
         btn._command    = command
 
+        ## @brief Documents on_enter.
+        ##
         def on_enter(e):
             btn.config(bg=self._brighten(color))
+        ## @brief Documents on_leave.
+        ##
         def on_leave(e):
             btn.config(bg=btn._base_color)
+        ## @brief Documents on_click.
+        ##
         def on_click(e):
             btn._command()
 
@@ -588,6 +674,8 @@ class LaserGUI:
         btn.bind('<ButtonRelease-1>', on_click)
         return btn
 
+    ## @brief Documents _brighten.
+    ##
     def _brighten(self, hex_color):
         """Lighten a hex color by ~30% for hover effect."""
         h = hex_color.lstrip('#')
@@ -597,6 +685,8 @@ class LaserGUI:
         b = min(255, int(b * 1.35))
         return f'#{r:02X}{g:02X}{b:02X}'
 
+    ## @brief Documents _build_ui.
+    ##
     def _build_ui(self):
         root = self.root
 
@@ -682,6 +772,8 @@ class LaserGUI:
         # ---- Power control ----
         pp = self._panel(main, "POWER CONTROL  -  LDD1", 1, 0)
 
+        ## @brief Documents val_row.
+        ##
         def val_row(parent, label, row, color=C['cyan']):
             tk.Label(parent, text=label, font=self.f_label,
                      bg=C['panel'], fg=C['gray']).grid(
@@ -758,6 +850,8 @@ class LaserGUI:
         # ---- Pulse control ----
         pulp = self._panel(main, "PULSE CONTROL", 1, 1, colspan=2)
 
+        ## @brief Documents pulse_row.
+        ##
         def pulse_row(parent, label, row, val="-", color=C['cyan']):
             tk.Label(parent, text=label, font=self.f_label,
                      bg=C['panel'], fg=C['gray']).grid(
@@ -872,6 +966,8 @@ class LaserGUI:
         # ---- Action buttons ----
         btnp = self._panel(main, None, 3, 0, rowspan=2)
 
+        ## @brief Documents big_btn.
+        ##
         def big_btn(parent, text, color, command, row):
             b = self._make_button(parent, text, color, command, width=12)
             b.grid(row=row, column=0, pady=4, sticky='ew')
@@ -909,6 +1005,8 @@ class LaserGUI:
 
     # ---- Port scanning ----
 
+    ## @brief Documents _scan_ports.
+    ##
     def _scan_ports(self):
         ports = ['SIMULATOR'] + [p.device for p in serial.tools.list_ports.comports()]
         self.port_cb['values'] = ports
@@ -921,6 +1019,8 @@ class LaserGUI:
 
     # ---- Connection ----
 
+    ## @brief Documents _on_connect.
+    ##
     def _on_connect(self):
         global SIM_MODE
         if SIM_MODE or (self.ser and self.ser.is_open):
@@ -959,6 +1059,8 @@ class LaserGUI:
         self._poll_running = True
         threading.Thread(target=self._poll_loop, daemon=True).start()
 
+    ## @brief Documents _disconnect.
+    ##
     def _disconnect(self):
         global SIM_MODE
         self._poll_running = False
@@ -975,6 +1077,8 @@ class LaserGUI:
 
     # ---- Poll loop ----
 
+    ## @brief Documents _poll_loop.
+    ##
     def _poll_loop(self):
         while self._poll_running:
             if SIM_MODE:
@@ -1016,6 +1120,8 @@ class LaserGUI:
             else:
                 time.sleep(interval)
 
+    ## @brief Documents _update_ui.
+    ##
     def _update_ui(self, d):
         st   = d.get('status')
         if not st:
@@ -1135,6 +1241,8 @@ class LaserGUI:
         # Sync selectors to actual laser state.
         # Lockout for 3s after a user write so poll doesn't immediately overwrite.
         now = time.time()
+        ## @brief Documents sync.
+        ##
         def sync(var, val, key):
             if val is not None and now > self._ctrl_lockout.get(key, 0):
                 var.set(val)
@@ -1147,6 +1255,8 @@ class LaserGUI:
         sync(self.var_duty_mode, duty_str,    'duty_mode')
 
         # Actual value labels (color: green=matches control, red=mismatch)
+        ## @brief Documents mismatch_color.
+        ##
         def mismatch_color(var, actual):
             return C['green'] if var.get() == actual else C['red_bright']
         self.lbl_prf_src_act.config(
@@ -1230,6 +1340,8 @@ class LaserGUI:
         else:
             self.lbl_alarms.config(text="", fg=C['gray'])
             self.btn_silence.config(bg=C['bg3'], fg=C['gray_dim'])
+    ## @brief Documents _reset_leds.
+    ##
     def _reset_leds(self):
         for led in [self.led_power, self.led_shutter, self.led_key,
                     self.led_ldd, self.led_qsw, self.led_silock,
@@ -1238,33 +1350,47 @@ class LaserGUI:
 
     # ---- Command handlers ----
 
+    ## @brief Documents _on_set_prf_source.
+    ##
     def _on_set_prf_source(self, val):
         if not self._require_connected(): return
         self._ctrl_lockout['prf_src'] = time.time() + 3.0
         code = 1 if val == "EXT" else 0
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x23, [code])
             self._status(f"PRF Source → {val}" if ok else f"ERR PRF Source: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_gate_source.
+    ##
     def _on_set_gate_source(self, val):
         if not self._require_connected(): return
         self._ctrl_lockout['gate_src'] = time.time() + 3.0
         code = 1 if val == "EXT" else 0
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x24, [code])
             self._status(f"Gate Source → {val}" if ok else f"ERR Gate Source: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_duty_mode.
+    ##
     def _on_set_duty_mode(self, val):
         if not self._require_connected(): return
         self._ctrl_lockout['duty_mode'] = time.time() + 3.0
         code = 1 if val == "Track" else 0
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x69, [code])
             self._status(f"Duty Mode → {val}" if ok else f"ERR Duty Mode: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_duty_width.
+    ##
     def _on_set_duty_width(self, event=None):
         if not self._require_connected(): return
         try:
@@ -1273,49 +1399,69 @@ class LaserGUI:
             self._status("Invalid duty width - enter integer ns.", error=True); return
         if ns < 600:
             self._status("ERR: minimum duty width is 600 ns", error=True); return
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x54, [(ns >> 16) & 0xFF, (ns >> 8) & 0xFF, ns & 0xFF])
             self._status(f"Duty Width → {ns} ns" if ok else f"ERR: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_prf.
+    ##
     def _on_set_prf(self, event=None):
         if not self._require_connected(): return
         try:
             hz = int(self.entry_prf_set.get())
         except ValueError:
             self._status("Invalid PRF value.", error=True); return
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x21, [(hz >> 16) & 0xFF, (hz >> 8) & 0xFF, hz & 0xFF])
             self._status(f"PRF → {hz:,} Hz" if ok else f"ERR: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_pulsed.
+    ##
     def _on_set_pulsed(self, val):
         if not self._require_connected(): return
         self._ctrl_lockout['pulsed'] = time.time() + 3.0
         code = 1 if val == "Enabled" else 0
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x20, [code])
             self._status(f"Pulsed Op → {val}" if ok else f"ERR Pulsed Op: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_set_burst.
+    ##
     def _on_set_burst(self, val):
         if not self._require_connected(): return
         self._ctrl_lockout['burst'] = time.time() + 3.0
         code = 1 if val == "On" else 0
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w(0x56, [code])
             self._status(f"Burst → {val}" if ok else f"ERR Burst: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_poll_rate_change.
+    ##
     def _on_poll_rate_change(self, event=None):
         rates = {"1s": 1.0, "10s": 10.0, "30s": 30.0, "1min": 60.0, "OFF": 0}
         val = self.var_poll_rate.get()
         self._poll_interval = rates.get(val, 1.0)
         self._status(f"Poll rate → {val}")
 
+    ## @brief Documents _on_poll_now.
+    ##
     def _on_poll_now(self):
         """Force an immediate single poll regardless of rate/pause state."""
         if not self._require_connected(): return
+        ## @brief Documents do.
+        ##
         def do():
             try:
                 if SIM_MODE:
@@ -1351,15 +1497,21 @@ class LaserGUI:
                 self._status(f"Poll ERR: {e}", error=True)
         threading.Thread(target=do, daemon=True).start()
 
+    ## @brief Documents _on_silence_alarms.
+    ##
     def _on_silence_alarms(self):
         self._alarms_silenced = True
 
+    ## @brief Documents _require_connected.
+    ##
     def _require_connected(self):
         if not SIM_MODE and (not self.ser or not self.ser.is_open):
             self._status("Not connected.", error=True)
             return False
         return True
 
+    ## @brief Documents _w.
+    ##
     def _w(self, cc, data):
         """Write to hardware - acquires serial lock."""
         if SIM_MODE:
@@ -1368,6 +1520,8 @@ class LaserGUI:
         with self._lock:
             return _write(self.ser, cc, data)
 
+    ## @brief Documents _r.
+    ##
     def _r(self, cc, aa=0x00):
         """Read from hardware - acquires serial lock."""
         if SIM_MODE:
@@ -1375,9 +1529,13 @@ class LaserGUI:
         with self._lock:
             return _read(self.ser, cc, aa)
 
+    ## @brief Documents _cmd.
+    ##
     def _cmd(self, fn):
         """Run a command in a background thread.
         Serial lock in _w/_r ensures no collision with poll loop."""
+        ## @brief Documents run.
+        ##
         def run():
             try:
                 fn()
@@ -1385,10 +1543,14 @@ class LaserGUI:
                 self._status(f"CMD ERR: {e}", error=True)
         threading.Thread(target=run, daemon=True).start()
 
+    ## @brief Documents _sim_write.
+    ##
     def _sim_write(self, cc, data):
         """Sim mode write - updates SimState directly."""
         return sim_write(cc, data)
 
+    ## @brief Documents _on_set_current.
+    ##
     def _on_set_current(self, event=None):
         if not self._require_connected():
             return
@@ -1400,6 +1562,8 @@ class LaserGUI:
         if a > MAX_CURRENT:
             self._status(f"ERR: Max allowed is {MAX_CURRENT}A", error=True)
             return
+        ## @brief Documents do.
+        ##
         def do():
             val = int(round(a * 100))
             ok, _, r = self._w( 0x11, [(val >> 8) & 0xFF, val & 0xFF])
@@ -1410,6 +1574,8 @@ class LaserGUI:
                 self._status(f"ERR setting current: {r}", error=True)
         self._cmd(do)
 
+    ## @brief Documents _on_shutter_toggle.
+    ##
     def _on_shutter_toggle(self):
         if not self._require_connected():
             return
@@ -1417,6 +1583,8 @@ class LaserGUI:
         if st is None:
             return
         enable = not st['shutter']
+        ## @brief Documents do.
+        ##
         def do():
             if enable:
                 ldd_was_on = st['ldd']
@@ -1435,6 +1603,8 @@ class LaserGUI:
                              error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_ldd_toggle.
+    ##
     def _on_ldd_toggle(self):
         if not self._require_connected():
             return
@@ -1442,15 +1612,21 @@ class LaserGUI:
         if st is None:
             return
         enable = not st['ldd']
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w( 0x10, [0x01 if enable else 0x00])
             self._status(f"LDD {'ON' if enable else 'OFF'}" if ok
                          else f"LDD ERR: {r}", error=not ok)
         self._cmd(do)
 
+    ## @brief Documents _on_go.
+    ##
     def _on_go(self):
         if not self._require_connected():
             return
+        ## @brief Documents do.
+        ##
         def do():
             st = read_status(self.ser) if not SIM_MODE else sim_read_status()
             if not st:
@@ -1492,9 +1668,13 @@ class LaserGUI:
             self._status("GO complete - LightBurn may fire.")
         self._cmd(do)
 
+    ## @brief Documents _on_shutdown.
+    ##
     def _on_shutdown(self):
         if not self._require_connected():
             return
+        ## @brief Documents do.
+        ##
         def do():
             self._w( 0x04, [0x00])   # shutter close
             self._w( 0x10, [0x00])   # LDD off
@@ -1506,14 +1686,20 @@ class LaserGUI:
             self._status("Shutdown complete. Current at zero.")
         self._cmd(do)
 
+    ## @brief Documents _on_reset.
+    ##
     def _on_reset(self):
         if not self._require_connected():
             return
+        ## @brief Documents do.
+        ##
         def do():
             ok, _, r = self._w( 0x07, [])
             self._status(f"Reset sent.")
         self._cmd(do)
 
+    ## @brief Documents _status.
+    ##
     def _status(self, msg, error=False):
         color = C['red_bright'] if error else C['gray']
         prefix = "ERR" if error else "OK "
@@ -1524,6 +1710,8 @@ class LaserGUI:
 
 # ---- Main ----
 
+## @brief Documents main.
+##
 def main():
     root = tk.Tk()
 
